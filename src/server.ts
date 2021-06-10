@@ -97,16 +97,10 @@ app.get("/connectionInfo", async (req, res) => {
   res.send({
     token: webParticipant.token,
     voiceApplicationPhoneNumber: voiceApplicationPhoneNumber,
-    outboundPhoneNumber: "user selected Telephone Numbers",
   });
   bridgeParticipant = await createParticipant("hello-world-phone");
-
   const createCallResponse = await callSipUri(bridgeParticipant);
-  console.log(
-    "bridge Call Result",
-    createCallResponse?.status,
-    createCallResponse?.data
-  );
+  console.log("initial configuration activities in motion");
 });
 
 /**
@@ -115,13 +109,14 @@ app.get("/connectionInfo", async (req, res) => {
  */
 app.post("/killConnection", async (req, res) => {
   res.send();
-  console.log("in /killConnection", req.body);
+
   if (
     req.body.event === "onLeave" &&
     webParticipant &&
     req.body.participantId == webParticipant.id
   ) {
     // TODO - move the null check inside of the functions
+    console.log("deallocating all configured resources on exit");
     await killSipUriLeg(bridgeParticipant);
     await deleteParticipant(bridgeParticipant.id);
     await deleteParticipant(webParticipant.id);
@@ -133,8 +128,7 @@ app.post("/killConnection", async (req, res) => {
  * The browser will hit this endpoint to initiate a call to the outbound phone number
  */
 app.post("/callPhone", async (req, res) => {
-  console.log("calling a phone", req.body);
-
+  console.log("calling a phone", req.body.calledTelephoneNumber);
   const outboundPhoneNumber = req.body.calledTelephoneNumber;
   if (
     !outboundPhoneNumber ||
@@ -156,9 +150,10 @@ app.post("/callPhone", async (req, res) => {
  * V2 Voice environments
  */
 app.post("/bridgeCallAnswered", async (req, res) => {
-  console.log("Bridge call answered body", req.body);
-
   const callId = req.body.callId;
+  console.log(
+    `received answered callback for bridging call ${callId} to ${req.body.to}`
+  );
 
   // preserve the call-leg
   let data: CallData = {
@@ -175,8 +170,7 @@ app.post("/bridgeCallAnswered", async (req, res) => {
   });
 
   const resp = new Response(conf);
-  console.log("creating conference bridge:", data, resp.toBxml());
-
+  console.log("creating Programmable Voice conference bridge:", resp.toBxml());
   res.contentType("application/xml").send(resp.toBxml());
 });
 
@@ -187,7 +181,7 @@ app.post("/bridgeCallAnswered", async (req, res) => {
 app.post("/callAnswered", async (req, res) => {
   const callId = req.body.callId;
   console.log(
-    `received answered callback for call ${callId} to ${req.body.to}`
+    `received answered callback for outbound call ${callId} to ${req.body.to}`
   );
 
   // preserve the call-leg
@@ -199,8 +193,6 @@ app.post("/callAnswered", async (req, res) => {
 
   voiceCalls.set(callId, data); // preserve the info on the bridge leg in the calls map.
 
-  console.log("voiceCalls MAP: ", voiceCalls);
-
   // This is the response payload that we will send back to the Voice API to conference the call into the WebRTC session
   const bxml = `<?xml version="1.0" encoding="UTF-8" ?>
   <Response>
@@ -210,7 +202,9 @@ app.post("/callAnswered", async (req, res) => {
 
   // Send the payload back to the Voice API
   res.contentType("application/xml").send(bxml);
-  console.log(`conferencing outbound call using v2 voice ${callId}`);
+  console.log(
+    `conferencing outbound call using Programmable Voice - ${callId}`
+  );
 });
 
 /**
@@ -270,7 +264,7 @@ const getSessionId = async (): Promise<string> => {
           password: password,
         },
       });
-      console.log(`using session ${sessionId}`);
+      console.log(`Using WebRTC session ${sessionId}`);
       return sessionId;
     } catch (e) {
       console.log(`session ${sessionId} is invalid, creating a new session`);
@@ -358,9 +352,7 @@ const deleteSession = async () => {
           },
         }
       );
-      console.log(
-        `Deleted WebRTC session: ${sessionId} - response - ${response.status} - data -  ${response.data}`
-      );
+      console.log(`Deleted WebRTC session: ${sessionId} `);
       sessionId = "";
     } catch (e) {
       console.log("failed to delete session", sessionId);
@@ -373,8 +365,6 @@ const deleteSession = async () => {
  * Delete a participant
  */
 const deleteParticipant = async (participantId: string) => {
-  console.log(`deleting participant ${participantId}`);
-
   try {
     const resp = await axios.delete(
       `${callControlUrl}/participants/${participantId}`,
@@ -385,7 +375,7 @@ const deleteParticipant = async (participantId: string) => {
         },
       }
     );
-    console.log("delete participant response:", resp.status, resp.data);
+    console.log(`Deleted Participant ${participantId}`);
   } catch (e) {
     if (e.response.status === 404) {
       // participants can get deleted when the media server detects loss of session / media flows
@@ -442,7 +432,7 @@ const callSipUri = async (participant: Participant) => {
       applicationId: voiceApplicationId,
       uui: `${participant.token};encoding=jwt`,
     };
-    console.log("calling a SIP URL", body);
+
     let response = await axios.post(
       `https://voice.bandwidth.com/api/v2/accounts/${accountId}/calls`,
       body,
@@ -454,7 +444,7 @@ const callSipUri = async (participant: Participant) => {
       }
     );
     const callId = response.data.callId;
-    console.log(`setting calls in SIPURI for ${callId}`);
+    console.log(`bridging call initiated with callId: ${callId}`);
     return response;
   } catch (e) {
     console.log(`error calling sip:sipx.webrtc.bandwidth.com:5060: ${e}`);
@@ -472,7 +462,6 @@ const killSipUriLeg = async (participant: Participant) => {
 
     let callId: string = "";
     for (let [key, value] of voiceCalls.entries()) {
-      console.log("hunting for callId:", key, value);
       if (value.bridge) callId = key;
     }
 
@@ -485,7 +474,7 @@ const killSipUriLeg = async (participant: Participant) => {
     }
 
     console.log(
-      `killing the SIP URI Leg - callId: ${callId} participant: ${participant.id}`
+      `Removing the bridging SIP Call Leg - callId: ${callId} participant: ${participant.id}`
     );
 
     let response = await axios.post(
