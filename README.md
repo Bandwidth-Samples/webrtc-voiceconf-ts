@@ -78,10 +78,10 @@ Enjoy!
 
 ### Adapt
 
-If you want to make changes to the web page component of the sample, ensure that you ...
+If you want to make changes to the web page frontend component of the sample, ensure that you ...
 
-```npm run postinstall
-
+```
+npm run postinstall
 ```
 
 ... after you make and save your changes, to ensure that a replacement front end is installed.

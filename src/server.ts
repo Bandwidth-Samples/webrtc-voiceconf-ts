@@ -6,12 +6,22 @@ import axios from "axios";
 import {
   Conference,
   ApiCreateCallRequest,
-  ApiError,
-  ApiController,
-  Client,
+  ApiModifyCallRequest,
+  Client as VoiceClient,
+  ApiController as VoiceController,
   Response,
-  SpeakSentence,
+  State1Enum,
 } from "@bandwidth/voice";
+import {
+  Client as WebRtcClient,
+  Session,
+  Participant,
+  PublishPermissionEnum,
+  Subscriptions,
+  ApiController as WebRtcController,
+  DeviceApiVersionEnum
+} from "@bandwidth/webrtc";
+
 const bandwidthWebRTC = require("@bandwidth/webrtc");
 
 dotenv.config();
@@ -40,7 +50,7 @@ if (!accountId || !username || !password) {
   process.exit(1);
 }
 
-interface Participant {
+interface ParticipantInfo {
   id: string;
   token: string;
 }
@@ -57,25 +67,29 @@ interface CallData {
 // TODO - clean out extra logs
 // TODO - upgrade callAnswered to the current version of the voice SDK, just because
 
-let webRTCController = bandwidthWebRTC.APIController;
+const webRTCClient = new WebRtcClient({
+  basicAuthUserName: username,
+  basicAuthPassword: password
+})
+const webRTCController = new WebRtcController(webRTCClient);
 
-const voiceClient = new Client({
+const voiceClient = new VoiceClient({
   basicAuthUserName: username,
   basicAuthPassword: password,
 });
-const voiceController = new ApiController(voiceClient);
+const voiceController = new VoiceController(voiceClient);
 
 let sessionId: string;
 let voiceCalls: Map<string, CallData> = new Map();
-let bridgeParticipant: Participant;
-let webParticipant: Participant;
+let bridgeParticipant: ParticipantInfo;
+let webParticipant: ParticipantInfo;
 
 process.on("SIGINT", async function () {
   if (bridgeParticipant) {
     await killSipUriLeg(bridgeParticipant);
-    await deleteParticipant(bridgeParticipant.id);
+    await deleteParticipant(bridgeParticipant);
   }
-  if (webParticipant) await deleteParticipant(webParticipant.id);
+  if (webParticipant) await deleteParticipant(webParticipant);
   if (sessionId) await deleteSession();
   process.exit();
 });
@@ -118,8 +132,8 @@ app.post("/killConnection", async (req, res) => {
     // TODO - move the null check inside of the functions
     console.log("deallocating all configured resources on exit");
     await killSipUriLeg(bridgeParticipant);
-    await deleteParticipant(bridgeParticipant.id);
-    await deleteParticipant(webParticipant.id);
+    await deleteParticipant(bridgeParticipant);
+    await deleteParticipant(webParticipant);
     await deleteSession();
   }
 });
@@ -222,7 +236,7 @@ app.post("/callStatus", async (req, res) => {
       const callData = voiceCalls.get(callId);
       if (callData?.bridge) {
         // results from disconnecting the bridge - clean up
-        deleteParticipant(bridgeParticipant.id);
+        deleteParticipant(bridgeParticipant);
       }
       voiceCalls.delete(callId);
     } else {
@@ -258,33 +272,25 @@ const getSessionId = async (): Promise<string> => {
   // If we already have a valid session going, just re-use that one
   if (sessionId) {
     try {
-      await axios.get(`${callControlUrl}/sessions/${sessionId}`, {
-        auth: {
-          username: username,
-          password: password,
-        },
-      });
-      console.log(`Using WebRTC session ${sessionId}`);
-      return sessionId;
+      let getSessionResponse = await webRTCController.getSession(accountId, sessionId);
+      const existingSession: Session = getSessionResponse.result;
+      console.log(`using session ${existingSession}, ${sessionId}`);
+      if (existingSession.id === sessionId) return sessionId
+      else throw(`saved session IDs don't match ${existingSession.id}, ${sessionId}`)
     } catch (e) {
       console.log(`session ${sessionId} is invalid, creating a new session`);
     }
   }
 
   // Otherwise start a new one and return the ID
-  let response = await axios.post(
-    `${callControlUrl}/sessions`,
-    {
-      tag: "hello-world",
-    },
-    {
-      auth: {
-        username: username,
-        password: password,
-      },
-    }
-  );
-  sessionId = response.data.id;
+  const createSessionBody : Session = {
+    tag: "v2-voice-conference-model"
+  }
+  let response = await webRTCController.createSession(accountId, createSessionBody);
+  if (!response.result.id) {
+    throw Error('No Session ID in Create Session Response');
+  }
+  sessionId = response.result.id;
   console.log(`created new session ${sessionId}`);
   return sessionId;
 };
@@ -292,49 +298,40 @@ const getSessionId = async (): Promise<string> => {
 /**
  * Create a new participant and save their ID to our app's state map
  */
-const createParticipant = async (tag: string): Promise<Participant> => {
+const createParticipant = async (tag: string): Promise<ParticipantInfo> => {
   // Create a new participant
   console.log(`creating a participant at ${callControlUrl}/participants`);
-  let createParticipantResponse = await axios.post(
-    `${callControlUrl}/participants`,
-    {
-      publishPermissions: ["AUDIO"],
-      tag: tag,
-      deviceApiVersion: "V3",
-      callbackUrl: `${voiceCallbackUrl}/killConnection`,
-    },
-    {
-      auth: {
-        username: username,
-        password: password,
-      },
-    }
-  );
-
-  const participant = createParticipantResponse.data.participant;
-  const token = createParticipantResponse.data.token;
-  const participantId = participant.id;
-  console.log(`created new participant ${participantId}`);
-
-  // Add participant to session
-  const sessionId = await getSessionId();
-  await axios.put(
-    `${callControlUrl}/sessions/${sessionId}/participants/${participant.id}`,
-    {
-      sessionId: sessionId,
-    },
-    {
-      auth: {
-        username: username,
-        password: password,
-      },
-    }
-  );
-
-  return {
-    id: participantId,
-    token: token,
+  const participantBody : Participant = {
+    tag: tag,
+    publishPermissions: [PublishPermissionEnum.AUDIO],
+    deviceApiVersion: DeviceApiVersionEnum.V3,
+    callbackUrl: `${voiceCallbackUrl}/killConnection`,
   };
+
+ 
+    let createParticipantResponse = await webRTCController.createParticipant(accountId, participantBody);
+    const participant = createParticipantResponse.result.participant;
+    
+    if (!participant?.id) throw("the participant was not returned");
+    const participantId = participant?.id;
+    if (!createParticipantResponse.result.token) throw("the token was not returned");
+    const token = createParticipantResponse.result.token;
+
+    console.log(`created new participant ${participantId}`);
+  
+    // Add participant to session
+    const sessionId = await getSessionId();
+    const subscriptions : Subscriptions = {
+      sessionId: sessionId
+    }
+  
+    await webRTCController.addParticipantToSession(accountId, sessionId, participantId, subscriptions);
+  
+    return {
+      id: participantId,
+      token: token,
+    };
+
 };
 
 /**
@@ -343,15 +340,7 @@ const createParticipant = async (tag: string): Promise<Participant> => {
 const deleteSession = async () => {
   if (sessionId) {
     try {
-      let response = await axios.delete(
-        `${callControlUrl}/sessions/${sessionId}`,
-        {
-          auth: {
-            username: username,
-            password: password,
-          },
-        }
-      );
+      await webRTCController.deleteSession(accountId, sessionId);
       console.log(`Deleted WebRTC session: ${sessionId} `);
       sessionId = "";
     } catch (e) {
@@ -364,25 +353,17 @@ const deleteSession = async () => {
 /**
  * Delete a participant
  */
-const deleteParticipant = async (participantId: string) => {
+const deleteParticipant = async (participant:ParticipantInfo) => {
   try {
-    const resp = await axios.delete(
-      `${callControlUrl}/participants/${participantId}`,
-      {
-        auth: {
-          username: username,
-          password: password,
-        },
-      }
-    );
-    console.log(`Deleted Participant ${participantId}`);
+    if (participant.id )await webRTCController.deleteParticipant(accountId, participant.id);
+    console.log(`Deleted Participant ${participant.id}`);
   } catch (e) {
-    if (e.response.status === 404) {
+    if (e.statusCode === 404) {
       // participants can get deleted when the media server detects loss of session / media flows
-      console.log("participant already deleted", participantId);
+      console.log("participant already deleted", participant.id);
     } else {
-      console.log("failure to delete participant", participantId);
-      console.log("error", e.response.status, e.response.data, e.config.url);
+      console.log("failure to delete participant", participant.id);
+      console.log("error", e.request, e.headers, e.statusCode, e.body);
     }
   }
 };
@@ -393,24 +374,16 @@ const deleteParticipant = async (participantId: string) => {
  * side of the infrastructure
  */
 const callPhone = async (phoneNumber: string) => {
+  const createCallRequest: ApiCreateCallRequest = {
+    from: voiceApplicationPhoneNumber,
+    to: phoneNumber,
+    answerUrl: `${voiceCallbackUrl}/callAnswered`,
+    disconnectUrl: `${voiceCallbackUrl}/callStatus`,
+    applicationId: voiceApplicationId,
+  }
   try {
-    let response = await axios.post(
-      `https://voice.bandwidth.com/api/v2/accounts/${accountId}/calls`,
-      {
-        from: voiceApplicationPhoneNumber,
-        to: phoneNumber,
-        answerUrl: `${voiceCallbackUrl}/callAnswered`,
-        disconnectUrl: `${voiceCallbackUrl}/callStatus`,
-        applicationId: voiceApplicationId,
-      },
-      {
-        auth: {
-          username: username,
-          password: password,
-        },
-      }
-    );
-    const callId = response.data.callId;
+    let response = await voiceController.createCall(accountId, createCallRequest);
+    const callId = response.result.callId;
     console.log(`initiated call ${callId} to ${phoneNumber}...`);
   } catch (e) {
     console.log(`error calling ${phoneNumber}: ${e}`);
@@ -422,7 +395,10 @@ const callPhone = async (phoneNumber: string) => {
  * participant token in the UUI SIP header to allow the correlation of
  * V2 voice and the webRTC infrastructure
  */
-const callSipUri = async (participant: Participant) => {
+
+// TODO - upgrade from axios when the SDK supports UUI
+
+ const callSipUri = async (participant: ParticipantInfo) => {
   try {
     const body = {
       from: voiceApplicationPhoneNumber,
@@ -432,7 +408,7 @@ const callSipUri = async (participant: Participant) => {
       applicationId: voiceApplicationId,
       uui: `${participant.token};encoding=jwt`,
     };
-
+    console.log("calling a SIP URL", body);
     let response = await axios.post(
       `https://voice.bandwidth.com/api/v2/accounts/${accountId}/calls`,
       body,
@@ -444,7 +420,7 @@ const callSipUri = async (participant: Participant) => {
       }
     );
     const callId = response.data.callId;
-    console.log(`bridging call initiated with callId: ${callId}`);
+    console.log(`setting calls in SIPURI for ${callId}`);
     return response;
   } catch (e) {
     console.log(`error calling sip:sipx.webrtc.bandwidth.com:5060: ${e}`);
@@ -477,24 +453,39 @@ const killSipUriLeg = async (participant: Participant) => {
       `Removing the bridging SIP Call Leg - callId: ${callId} participant: ${participant.id}`
     );
 
-    let response = await axios.post(
-      `https://voice.bandwidth.com/api/v2/accounts/${accountId}/calls/${callId}`,
-      {
-        state: "completed",
-      },
-      {
-        auth: {
-          username: username,
-          password: password,
-        },
-      }
-    );
+    const modifyCallRequest: ApiModifyCallRequest = {
+      state: State1Enum.Completed,
+      redirectUrl: ''
+    }
+    try {
+      let response = await voiceController.modifyCall(accountId, callId, modifyCallRequest);
+      console.log(`Ending call ${callId}`);
+    } catch (e) {
+      console.log(`Ending call ${callId}: ${e}`);
+    }
+
+    // let response = await axios.post(
+    //   `https://voice.bandwidth.com/api/v2/accounts/${accountId}/calls/${callId}`,
+    //   {
+    //     state: "completed",
+    //   },
+    //   {
+    //     auth: {
+    //       username: username,
+    //       password: password,
+    //     },
+    //   }
+    // );
+
+    if (!voiceCalls.delete(callId)) throw(`failed to remove sipx bridge leg ${callId}`);
+
     console.log(
-      `Deleted conference sipx leg response ${response.status} - data -  ${response.data}`
+      `Deleted conference sipx leg`
     );
   } catch (e) {
     console.log(
-      `error killing the sip:sipx.webrtc.bandwidth.com:5060 leg: ${participant} ${e}`
+      `failed to kill the sip:sipx.webrtc.bandwidth.com:5060 leg.`
     );
+    console.log(e);
   }
 };
