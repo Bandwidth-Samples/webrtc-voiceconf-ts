@@ -1,43 +1,59 @@
-
 ## Implemented Conference case
+
 Baseline with conference
-1) Web Participant
-2) Session
-3) SIP Participant
-4) Creating the Call from V2 Voice
-4a) Answer Handling on Bridging leg
-5) Creating a voice conference bridge - 
-6) calling a phone +18045030091
-6a) conferencing outbound call
-7) Disconnecting the outbound call
-8) cleanup
+
+1. Web Participant
+2. Session
+3. SIP Participant
+4. Creating the Call from V2 Voice
+   4a) Answer Handling on Bridging leg
+5. Creating a voice conference bridge -
+6. calling a phone +18045030091
+   6a) conferencing outbound call
+7. Disconnecting the outbound call
+8. cleanup
 
 ## Speculative Bridge case
+
 Bridge
-1) Web Participant
-2) Session
-3) SIP Participant
-4) Creating the Call from V2 Voice
-4a) Answer Handling on Bridging leg
-5) >>> Holding the Bridging Leg - 
-6) calling a phone +18045030091
-6a) >>> Bridging outbound call
-7) Disconnecting the outbound call
-7a) >>> Holding the Bridging call
-8) cleanup
+
+1. Web Participant
+2. Session
+3. SIP Participant
+4. Creating the Call from V2 Voice
+   4a) Answer Handling on Bridging leg
+5. > > > Holding the Bridging Leg -
+6. calling a phone +18045030091
+   6a) >>> Bridging outbound call
+7. Disconnecting the outbound call
+   7a) >>> Holding the Bridging call
+8. cleanup
 
 ## Speculative Transfer case
+
 Transfer (entire call should fall down on far end disconnect)
-1) Web Participant
-2) Session
-3) SIP Participant
-4) Creating the Call from V2 Voice
-4a) Answer Handling on Bridging leg
-5) >>> Holding the Bridging Leg - 
-6) >>> Transferring the held call to +18045030091
-7) >>> Disconnecting the outbound call
-7a) >>> The Bridging call comes down
-8) cleanup
+
+1. Web Participant
+2. Session
+3. SIP Participant
+4. Creating the Call from V2 Voice
+   4a) Answer Handling on Bridging leg
+5. > > > Holding the Bridging Leg -
+6. > > > Transferring the held call to +18045030091
+7. > > > Disconnecting the outbound call
+   > > > 7a) >>> The Bridging call comes down
+8. cleanup
+
+How to attack
+
+- Encapsulate the anticipated behavior for the actions starting at the answer handling on the bridging leg.
+- create an environment variable that is used to determine the model
+  - we can't switch models without a complete reset - it is just too hard.
+- key actions are
+  - suspend the bridging leg
+  - extending the call
+  - ending the call
+  - ending the complete session
 
 ## logging from conferencing case
 
@@ -59,7 +75,7 @@ using session [object Object], c2a38655-a385-4f70-9732-474bde1e6b27
 setting calls in SIPURI for c-d45a41e5-dae6c964-7238-414a-801b-3e60227fb473
 initial configuration activities in motion
 4a) Answer Handling on Bridging leg - received answered callback for bridging call c-d45a41e5-dae6c964-7238-414a-801b-3e60227fb473 to sip:sipx.webrtc.bandwidth.com:5060
-5) Creating a voice conference bridge - 
+5) Creating a voice conference bridge -
 creating Programmable Voice conference bridge: <?xml version="1.0" encoding="UTF-8"?><Response><ConferencecallIdsToCoach="">c2a38655-a385-4f70-9732-474bde1e6b27</Conference></Response>
 6) calling a phone +18045030091
 initiated call c-93d6f3c0-488aff09-7eed-431b-872a-0079dfeb2a1a to +18045030091...
