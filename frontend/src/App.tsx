@@ -83,8 +83,9 @@ const App: React.FC = () => {
 
   const updateTn = (element: React.ChangeEvent<HTMLInputElement>) => {
     const invalid = !element.target.value.match(/^\+1[2-9][0-9]{9}$/);
-    if (!invalid) setOutboundPhoneNumber(element.target.value);
-    else setOutboundPhoneNumber("");
+    if (!invalid) {
+      setOutboundPhoneNumber(element.target.value);
+    } else setOutboundPhoneNumber("");
     console.log(outboundPhoneNumber);
   };
 
