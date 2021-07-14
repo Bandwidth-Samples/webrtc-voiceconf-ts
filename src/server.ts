@@ -11,6 +11,7 @@ import {
   ApiController as VoiceController,
   Response,
   State1Enum,
+  SpeakSentence,
 } from "@bandwidth/voice";
 import {
   Client as WebRtcClient,
@@ -187,7 +188,15 @@ app.post("/bridgeCallAnswered", async (req, res) => {
     callIdsToCoach: undefined,
   });
 
-  const resp = new Response(conf);
+  const speak = new SpeakSentence({
+    sentence: "Thank you. Connecting you to your conference now.",
+    voice: "julie",
+  });
+
+  const resp = new Response();
+  resp.add(speak);
+  resp.add(conf);
+
   console.log("creating Programmable Voice conference bridge:", resp.toBxml());
   res.contentType("application/xml").send(resp.toBxml());
 });
@@ -211,18 +220,25 @@ app.post("/callAnswered", async (req, res) => {
 
   voiceCalls.set(callId, data); // preserve the info on the bridge leg in the calls map.
 
-  // This is the response payload that we will send back to the Voice API to conference the call into the WebRTC session
-  const bxml = `<?xml version="1.0" encoding="UTF-8" ?>
-  <Response>
-      <SpeakSentence voice="julie">Thank you. Connecting you to your conference now.</SpeakSentence>
-      <Conference>${sessionId}</Conference>
-  </Response>`;
+  const conf = new Conference({
+    name: sessionId,
+    callIdsToCoach: undefined,
+  });
 
-  // Send the payload back to the Voice API
-  res.contentType("application/xml").send(bxml);
+  const speak = new SpeakSentence({
+    sentence: "You are about to talk to an amazing person.",
+    voice: "bridget",
+  });
+
+  const resp = new Response();
+  resp.add(speak);
+  resp.add(conf);
+
   console.log(
     `conferencing outbound call using Programmable Voice - ${callId}`
   );
+  console.log("Voice conference bridge BXML:", resp.toBxml());
+  res.contentType("application/xml").send(resp.toBxml());
 });
 
 /**
