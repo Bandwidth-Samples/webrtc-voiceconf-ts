@@ -194,7 +194,7 @@ app.post("/bridgeCallAnswered", async (req, res) => {
   });
 
   const resp = new Response();
-  resp.add(speak);
+  // resp.add(speak);  //this introduces a 1-way voice condition - TODO - fix the root cause and reinstate the annct
   resp.add(conf);
 
   console.log("creating Programmable Voice conference bridge:", resp.toBxml());
@@ -380,12 +380,17 @@ const createParticipant = async (tag: string): Promise<ParticipantInfo> => {
 const deleteSession = async () => {
   if (sessionId) {
     try {
-      await webRTCController.deleteSession(accountId, sessionId);
       console.log(`Deleted WebRTC session: ${sessionId} `);
       sessionId = "";
     } catch (e) {
+      let error: any = e;
       console.log("failed to delete session", sessionId);
-      console.log("error", e.response.status, e.response.data, e.config.url);
+      console.log(
+        "error",
+        error.response.status,
+        error.response.data,
+        error.config.url
+      );
     }
   }
 };
@@ -400,12 +405,19 @@ const deleteParticipant = async (participant: ParticipantInfo) => {
     }
     console.log(`Deleted Participant ${participant.id}`);
   } catch (e) {
-    if (e.statusCode === 404) {
+    let error: any = e;
+    if (error.statusCode === 404) {
       // participants can get deleted when the media server detects loss of session / media flows
       console.log("participant already deleted", participant.id);
     } else {
       console.log("failure to delete participant", participant.id);
-      console.log("error", e.request, e.headers, e.statusCode, e.body);
+      console.log(
+        "error",
+        error.request,
+        error.headers,
+        error.statusCode,
+        error.body
+      );
     }
   }
 };
