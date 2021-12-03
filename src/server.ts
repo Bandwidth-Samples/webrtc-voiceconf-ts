@@ -12,6 +12,7 @@ import {
   Response,
   State1Enum,
   SpeakSentence,
+  ApiResponse,
 } from "@bandwidth/voice";
 import {
   Client as WebRtcClient,
@@ -188,13 +189,7 @@ app.post("/bridgeCallAnswered", async (req, res) => {
     callIdsToCoach: undefined,
   });
 
-  const speak = new SpeakSentence({
-    sentence: "Thank you. Connecting you to your conference now.",
-    voice: "julie",
-  });
-
   const resp = new Response();
-  resp.add(speak);
   resp.add(conf);
 
   console.log("creating Programmable Voice conference bridge:", resp.toBxml());
@@ -384,8 +379,14 @@ const deleteSession = async () => {
       console.log(`Deleted WebRTC session: ${sessionId} `);
       sessionId = "";
     } catch (e) {
+      let error: ApiResponse<void> = e as ApiResponse<void>;
       console.log("failed to delete session", sessionId);
-      console.log("error", e.response.status, e.response.data, e.config.url);
+      console.log(
+        `request method: ${error.request.method}\n`,
+        `request url: ${error.request.url}\n`,
+        `resuling status code: ${error.statusCode}\n`,
+        `resulting error: ${error.body}\n`
+      );
     }
   }
 };
@@ -400,12 +401,18 @@ const deleteParticipant = async (participant: ParticipantInfo) => {
     }
     console.log(`Deleted Participant ${participant.id}`);
   } catch (e) {
-    if (e.statusCode === 404) {
+    let error: ApiResponse<void> = e as ApiResponse<void>;
+    if (error.statusCode === 404) {
       // participants can get deleted when the media server detects loss of session / media flows
       console.log("participant already deleted", participant.id);
     } else {
       console.log("failure to delete participant", participant.id);
-      console.log("error", e.request, e.headers, e.statusCode, e.body);
+      console.log(
+        `request method: ${error.request.method}\n`,
+        `request url: ${error.request.url}\n`,
+        `resuling status code: ${error.statusCode}\n`,
+        `resulting error: ${error.body}\n`
+      );
     }
   }
 };
