@@ -375,7 +375,7 @@ const createParticipant = async (tag: string): Promise<ParticipantInfo> => {
 const deleteSession = async () => {
   if (sessionId) {
     try {
-      await webRTCController.deleteSession(accountId, "garbage");
+      await webRTCController.deleteSession(accountId, sessionId);
       console.log(`Deleted WebRTC session: ${sessionId} `);
       sessionId = "";
     } catch (e) {
@@ -397,7 +397,7 @@ const deleteSession = async () => {
 const deleteParticipant = async (participant: ParticipantInfo) => {
   try {
     if (participant.id) {
-      await webRTCController.deleteParticipant(accountId, "garbage");
+      await webRTCController.deleteParticipant(accountId, participant.id);
     }
     console.log(`Deleted Participant ${participant.id}`);
   } catch (e) {
