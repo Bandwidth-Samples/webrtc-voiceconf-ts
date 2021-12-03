@@ -375,18 +375,17 @@ const createParticipant = async (tag: string): Promise<ParticipantInfo> => {
 const deleteSession = async () => {
   if (sessionId) {
     try {
-      await webRTCController.deleteSession(accountId, sessionId);
+      await webRTCController.deleteSession(accountId, "garbage");
       console.log(`Deleted WebRTC session: ${sessionId} `);
       sessionId = "";
     } catch (e) {
       let error: ApiResponse<void> = e as ApiResponse<void>;
       console.log("failed to delete session", sessionId);
       console.log(
-        "error",
-        error.request,
-        error.headers,
-        error.statusCode,
-        error.body
+        `request method: ${error.request.method}\n`,
+        `request url: ${error.request.url}\n`,
+        `resuling status code: ${error.statusCode}\n`,
+        `resulting error: ${error.body}\n`
       );
     }
   }
@@ -398,7 +397,7 @@ const deleteSession = async () => {
 const deleteParticipant = async (participant: ParticipantInfo) => {
   try {
     if (participant.id) {
-      await webRTCController.deleteParticipant(accountId, participant.id);
+      await webRTCController.deleteParticipant(accountId, "garbage");
     }
     console.log(`Deleted Participant ${participant.id}`);
   } catch (e) {
@@ -409,11 +408,10 @@ const deleteParticipant = async (participant: ParticipantInfo) => {
     } else {
       console.log("failure to delete participant", participant.id);
       console.log(
-        "error",
-        error.request,
-        error.headers,
-        error.statusCode,
-        error.body
+        `request method: ${error.request.method}\n`,
+        `request url: ${error.request.url}\n`,
+        `resuling status code: ${error.statusCode}\n`,
+        `resulting error: ${error.body}\n`
       );
     }
   }
